@@ -43,6 +43,14 @@ export function resolveNpmCommand(
     env.USERPROFILE && win32.join(env.USERPROFILE, "scoop", "shims")]
     .filter(root => typeof root === "string" && win32.isAbsolute(root));
   const trustedEntry = entry => trustedRoots.some(root => isInside(root, entry) && !isInside(root, cwd));
+  // Scoop installs Node's npm in the app tree, not in scoop/shims. Admit only
+  // the two Node apps' current npm directories, never arbitrary Scoop apps or
+  // a launch directory inside the installation itself.
+  const scoopNodeRoots = typeof env.USERPROFILE === "string" && win32.isAbsolute(env.USERPROFILE)
+    ? ["nodejs", "nodejs-lts"].map(app => win32.join(env.USERPROFILE, "scoop", "apps", app, "current"))
+    : [];
+  const trustedScoopNodeEntry = entry => scoopNodeRoots.some(current =>
+    !isInside(current, cwd) && (isSamePath(current, entry) || isSamePath(win32.join(current, "bin"), entry)));
   const extensions = (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
     .split(";")
     .filter(Boolean);
@@ -54,7 +62,7 @@ export function resolveNpmCommand(
   for (const entry of pathEntries) {
     if (!win32.isAbsolute(entry)) continue;
     if (isSamePath(entry, cwd)) continue;
-    if (isInside(cwd, entry) && !trustedEntry(entry)) continue;
+    if (isInside(cwd, entry) && !trustedEntry(entry) && !trustedScoopNodeEntry(entry)) continue;
     for (const extension of extensions) {
       const candidate = win32.join(entry, `npm${extension.toLowerCase()}`);
       if (exists(candidate)) return win32.resolve(candidate);
