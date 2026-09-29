@@ -344,10 +344,15 @@ starts the proxy outside the updater's process tree, so that proxy has to take t
 held through the repair's health wait, the lease kept it from starting, and recovery fell through
 to a second, directly started proxy (#5760). The recovery decision is made again after the release.
 
-On Windows, `src/update/npm-invocation.mjs` admits the exact
+On Windows, `src/update/npm-invocation.mjs` admits only the exact
 `%USERPROFILE%\scoop\apps\nodejs{,-lts}\current` and `current\bin` PATH entries
-from an ancestor cwd. This exception does not admit other Scoop apps, arbitrary
-descendants, or cwd inside that Node installation.
+from outside that Node installation. It resolves the junction, PATH entry, npm candidate,
+and cwd to physical paths; `current` must remain within its Scoop app directory and
+the npm candidate within the admitted entry. `current\bin` may point to the default
+`%USERPROFILE%\scoop\persist\nodejs{,-lts}\bin`; cwd inside that persistent bin
+is excluded too. Unreadable paths fail closed. Other Scoop apps, version-directory
+PATH entries (`NO_JUNCTION`), custom home-root Scoop installs, arbitrary descendants,
+and cwd inside the resolved Node installation are not admitted.
 
 The npm transaction creates each staging directory exclusively and may clean that fresh path
 while the creating process still owns it. On POSIX it also creates the stage's `lib` directory,

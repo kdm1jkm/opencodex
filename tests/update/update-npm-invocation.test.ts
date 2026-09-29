@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   npmInvocation,
   resolveNpmCommand,
@@ -66,7 +69,7 @@ describe("Windows npm update invocation", () => {
   ])("resolves trusted npm from broad cwd %s", (cwd, directory, envKey, root) => {
     const npm = `${directory}\\npm.cmd`;
     expect(resolveNpmCommand("win32", { PATH: directory, PATHEXT: ".CMD", [envKey]: root }, {
-      cwd, exists: path => path === npm,
+      cwd, exists: path => path === npm, realpath: path => path,
     })).toBe(npm);
   });
 
@@ -79,6 +82,61 @@ describe("Windows npm update invocation", () => {
     expect(resolveNpmCommand("win32", {
       ...env, PATH: `${home}\\scoop\\apps\\other\\current\\bin`,
     }, { cwd: home, exists: () => true })).toBeNull();
+  });
+
+  test.skipIf(process.platform !== "win32")("resolves real Scoop junctions but rejects resolved cwd and redirected targets", () => {
+    const home = mkdtempSync(join(tmpdir(), "ocx-scoop-node-"));
+    try {
+      const app = join(home, "scoop", "apps", "nodejs-lts");
+      const version = join(app, "24.1.0");
+      const current = join(app, "current");
+      const bin = join(current, "bin");
+      mkdirSync(join(version, "bin"), { recursive: true });
+      writeFileSync(join(version, "bin", "npm.cmd"), "@echo off\r\n");
+      symlinkSync(version, current, "junction");
+      const env = { PATH: bin, USERPROFILE: home, PATHEXT: ".CMD", SystemRoot: "C:\\Windows" };
+      const npm = join(bin, "npm.cmd");
+
+      expect(resolveNpmCommand("win32", env, { cwd: home })).toBe(npm);
+      expect(resolveNpmCommand("win32", env, { cwd: version })).toBeNull();
+      expect(npmInvocation(["--version"], "win32", env, { cwd: join(version, "bin") })).toBeNull();
+
+      rmSync(join(version, "bin"), { recursive: true });
+      const persistBin = join(home, "scoop", "persist", "nodejs-lts", "bin");
+      mkdirSync(persistBin, { recursive: true });
+      writeFileSync(join(persistBin, "npm.cmd"), "@echo off\r\n");
+      symlinkSync(persistBin, join(version, "bin"), "junction");
+      expect(resolveNpmCommand("win32", env, { cwd: home })).toBe(npm);
+      expect(resolveNpmCommand("win32", env, { cwd: persistBin })).toBeNull();
+
+      rmSync(join(version, "bin"));
+      const outsideBin = join(home, "other-bin");
+      mkdirSync(outsideBin);
+      writeFileSync(join(outsideBin, "npm.cmd"), "@echo off\r\n");
+      symlinkSync(outsideBin, join(version, "bin"), "junction");
+      expect(resolveNpmCommand("win32", env, { cwd: home })).toBeNull();
+
+      rmSync(current);
+      const outside = join(home, "other-app");
+      mkdirSync(join(outside, "bin"), { recursive: true });
+      writeFileSync(join(outside, "bin", "npm.cmd"), "@echo off\r\n");
+      symlinkSync(outside, current, "junction");
+      expect(resolveNpmCommand("win32", env, { cwd: home })).toBeNull();
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test("does not admit NO_JUNCTION or a custom Scoop root under the home", () => {
+    const home = "C:\\Users\\dev";
+    for (const entry of [
+      `${home}\\scoop\\apps\\nodejs-lts\\24.1.0\\bin`,
+      `${home}\\custom-scoop\\apps\\nodejs-lts\\current\\bin`,
+    ]) {
+      expect(resolveNpmCommand("win32", { PATH: entry, USERPROFILE: home, PATHEXT: ".CMD" }, {
+        cwd: home, exists: () => true,
+      })).toBeNull();
+    }
   });
 
   test("ignores npm candidates in current-directory subtrees", () => {

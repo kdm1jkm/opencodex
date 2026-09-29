@@ -829,7 +829,11 @@ while a foreground installation prints `ocx start` as the next step. Dashboard u
 redact profile/cache paths and UID/GID values before they are persisted.
 
 On Windows, Scoop's default `nodejs` and `nodejs-lts` `npm` installations can be used
-from the user home directory; project-local `npm` candidates remain excluded.
+from the user home directory when their `current` junction stays inside the Node app
+directory; the default persistent `bin` directory is also supported. Running inside
+that installation (including its resolved version directory or persistent `bin`),
+project-local `npm`, `NO_JUNCTION` version-directory entries, and custom Scoop roots
+under the home remain excluded.
 
 If the install step fails, the previous version stays installed and its service is restarted; the
 terminal output names the next step, and [Update Failed on Windows](/troubleshooting/update-failed/)
